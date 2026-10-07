@@ -20,6 +20,7 @@ The game boots, plays, and holds 60 FPS. Physics, camera and traffic behave the 
 | Ambient density tuning | Working since the hook moved to the constructor epilogue. It never fired before that. |
 | Texture cache | Closed. `texture_cache_misses` sits at zero. |
 | Long-session frame rate collapse | Root cause identified in the SDK. Workaround in place; upstream fix pending. |
+| Hitches while driving | Cause traced to GPU emulation stalls. Their physics after-effects are softened by a 50 ms frame clamp; the stalls themselves are open. |
 | Audio jitter in dense areas | Open. Four causes eliminated by measurement. |
 | Dithered alpha on shadows and foliage | Open, and the only rendering issue left. Car reflections and HUD glitches were fixed in the custom ReXGlue build. |
 
@@ -131,6 +132,37 @@ That branch returns the guest tick count as a plain function of the host clock w
 **Open question: does the flag cost frame rate?** Reported as feeling less smooth. Not confirmed either way. What is measured: interrupt load is unchanged, at 1,014 vblanks per second under the flag against a 1,010 baseline, so that mechanism is out. Two things it does change: `ScaleHostToGuestTicks` runs on the full host tick count rather than a small delta, and `QueryGuestSystemTime` returns host time while `SetGuestSystemTime` becomes a no-op. Settling it needs the same route run twice with `MCLA_TIMING_LOG=1` and the histograms compared. The older logs were deleted, so there is no baseline to compare against retroactively.
 
 Also worth noting: with `vsync=false` the vblank interval is 1 ms, not 16.67 ms, giving roughly 17x an Xbox 360's rate. It does not cause the bug but it widens the window.
+
+---
+
+## Hitches while driving
+
+Symptom: while driving, the whole image judders now and then, and dangling damage parts bounce at the same moments. It looked like a rendering problem, and Xenia shows it too above 30 FPS. It is single-frame CPU stalls, followed by physics integrating the whole stall in one step.
+
+Measured on a 5800X and RTX 3080 Ti at 4K, about 100 s of driving, with a per-frame trace of engine timer ticks and guest swaps:
+
+| measure | result |
+|---|---|
+| swaps per engine frame | exactly 1 (5,885 of 5,894) |
+| engine delta vs measured interval | within 0.04 ms every frame |
+| frames over 30 / 50 / 100 ms | 106 / 29 / 7, worst 234 ms |
+| alternating long-short frames | 1% |
+
+So between hitches the timing is correct, and the judder is the hitches.
+
+**Where the stalls come from.** The guest profiler (`MCLA_PROFILE=1`, `MCLA_PROFILE_SLOW_MS=40`), restricted to slow frames:
+
+- The main thread spends 80% of a slow frame waiting on the render thread (`sub_82135DC0`).
+- The render thread is in `D3DDevice_Swap -> D3DDevice_BlockOnFence`, waiting on the GPU.
+- The GPU Commands thread runs at ~94% of a core. In slow frames it spends about five times its usual share in `NtGdiDdDDICreateAllocation` (7.9% vs 1.5%) and in `NtGdiDdDDIWaitForSynchronizationObjectFromCpu` (12.5% vs 2.3%): driver allocations and host GPU waits, most likely while new areas stream in.
+- Shader and texture cache misses stay at zero, so it is not compilation or cache eviction.
+- Guest dispatches per second jump about 4x in the seconds containing hitches.
+
+The plugin itself shows up only as `rex_gpu_create` because the SDK ships no PDBs. Naming the allocating code needs a ReXGlue build with symbols.
+
+**What was changed.** `max_frame_ms` replaces the hardcoded 125 ms hitch clamp, defaulting to 50 ms and exposed as HITCH CLAMP in Recomp Settings. A 137 ms stall now advances the game 50 ms instead of 125: a brief slowdown rather than a lurch. Verified by driving: the damage parts stop bouncing. The hitches themselves are unchanged, and `d3d12_submit_on_primary_buffer_end = true` helps only slightly.
+
+**Still open:** the stalls themselves. Next step is a symbol build of the GPU plugin, to name which allocations and waits stall, then most likely a fix in the SDK.
 
 ---
 

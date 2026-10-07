@@ -155,6 +155,7 @@ One detail worth knowing regardless: with `vsync=false` the interval is `guest_t
 - **Texture cache**: raising limits to 1536 MB soft, 2048 MB hard and 64 MB render-to-texture takes `texture_cache_misses` to zero. That avenue is closed.
 - **Draw calls run about 70 per frame** at ~50 FPS. Dense-area slowdowns are not draw-call submission; the cost is in the recompiled guest code doing traffic AI, physics and streaming.
 - The startup stub sweep registers about 1.7 million unmapped addresses in 400 to 500 ms. `stubs.txt` stays empty in practice, but the net turns an unmapped indirect call from a crash into a logged no-op, so it stays on.
+- **Hitches while driving come from the GPU Commands thread**, not from game logic or the presenter. In frames over 40 ms the main thread waits on the render thread, which is in `D3DDevice_BlockOnFence`, while the GPU Commands thread spends about five times its usual share in driver allocation (`NtGdiDdDDICreateAllocation`) and host GPU waits. Physics then integrates the stall in one step, which is the whole-image judder and the bouncing damage parts. The `max_frame_ms` clamp (default 50 ms) limits that step; the stall itself is unfixed. Details in [`MCLA_WORKPLAN.md`](MCLA_WORKPLAN.md#hitches-while-driving).
 
 ---
 

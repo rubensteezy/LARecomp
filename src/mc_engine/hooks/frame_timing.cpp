@@ -209,23 +209,44 @@ static void EnforceFrameLimit() {
 // Clamps max ticks and runs precision limiter.
 // Upper bound on a single frame's delta, in guest timebase ticks.
 //
-// Tunable via MCLA_MAX_FRAME_MS, clamped to [16, 1000] ms. Previously hardcoded
-// to 125 ms while the env var was advertised in effective_config.txt but never
-// read.
+// The max_frame_ms cvar, which MCLA_MAX_FRAME_MS overrides, clamped to
+// [16, 1000] ms.
+//
+// Why 50 and not the old 125: hitches here are single frames of 50 to 350 ms,
+// almost all of them the GPU Commands thread stalling on driver allocations
+// and host GPU waits while new areas stream in (the render thread sits in
+// D3DDevice_Swap -> BlockOnFence, and the main thread waits on it). Physics
+// then integrates the whole stall in one step. At 125 ms that is a visible
+// lurch of the car and camera, and spring-like bodies - dangling damage parts
+// most visibly - overshoot and bounce for a while afterwards. At 50 ms
+// (20 FPS) the same hitch costs at most a few frames of lost game time, which
+// reads as a brief slowdown instead. Frames under 50 ms, i.e. all normal play
+// above 20 FPS, are untouched.
+REXCVAR_DEFINE_INT32(max_frame_ms, 50, "MCLA/Performance",
+    "Most game time one frame may advance, in ms. A hitch longer than this "
+    "slows the game briefly instead of making physics jump. 125 was the old "
+    "default. MCLA_MAX_FRAME_MS overrides it.")
+    .range(16, 1000)
+    .lifecycle(rex::cvar::Lifecycle::kHotReload);
+
 static uint64_t MaxFrameTicks() {
-    static const uint64_t ticks = [] {
-        double ms = 125.0;
+    // Read once: environment variables cannot change after process start.
+    static const double env_ms = [] {
         if (const char* e = std::getenv("MCLA_MAX_FRAME_MS")) {
-            double v = std::atof(e);
-            if (v > 0.0) ms = v;
+            const double v = std::atof(e);
+            if (v > 0.0) return v;
         }
-        if (ms < 16.0) ms = 16.0;
-        if (ms > 1000.0) ms = 1000.0;
-        uint64_t hz = rex::chrono::Clock::guest_tick_frequency();
-        if (hz == 0) hz = 50000000;
-        return static_cast<uint64_t>(ms * 0.001 * static_cast<double>(hz));
+        return 0.0;
     }();
-    return ticks;
+    static const uint64_t hz = [] {
+        const uint64_t f = rex::chrono::Clock::guest_tick_frequency();
+        return f ? f : 50000000;
+    }();
+
+    double ms = env_ms > 0.0 ? env_ms : static_cast<double>(REXCVAR_GET(max_frame_ms));
+    if (ms < 16.0) ms = 16.0;
+    if (ms > 1000.0) ms = 1000.0;
+    return static_cast<uint64_t>(ms * 0.001 * static_cast<double>(hz));
 }
 
 // Feeds the sampling profiler the real wall-clock frame time. Called after the

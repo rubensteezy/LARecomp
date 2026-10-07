@@ -162,7 +162,7 @@ class LarecompApp : public rex::ReXApp {
                             "smooth_chassis_depth", "smooth_chase_cam",
                             "chase_cam_smoothing_factor", "enable_ambient_tuning",
                             "traffic_unspawn_dist", "ped_density_scale",
-                            "parked_car_scale", "speed_units"}) {
+                            "parked_car_scale", "speed_units", "max_frame_ms"}) {
         std::string v = rex::cvar::GetFlagByName(c);
         fprintf(f, "%-46s = %s\n", c, v.empty() ? "<empty/unset>" : v.c_str());
       }

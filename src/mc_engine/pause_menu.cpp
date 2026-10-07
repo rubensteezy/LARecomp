@@ -868,6 +868,8 @@ constexpr double kFovValues[] = {0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4,
                                  1.5, 1.6, 1.7, 1.8, 1.9, 2.0};
 constexpr double kLodValues[] = {0.1, 0.5, 1.0, 2.0, 5.0, 10.0};
 constexpr double kFpsCapVals[] = {30.0, 60.0, 120.0, 144.0, 0.0};
+// max_frame_ms: 33 is one console frame, 125 the old default.
+constexpr double kHitchClampVals[] = {33.0, 50.0, 66.0, 100.0, 125.0};
 
 // Performance. Traffic/ped/parked mirror the ranges the cvars declare; the
 // fragment-tune tables bracket the two values the engine itself uses — 250 is
@@ -942,6 +944,7 @@ const ItemDef kRecompItems[] = {
     Bool("PM_RxBlur",        "disable_motion_blur",      "MOTION BLUR: ",    true),
     // BadassBaboon's Recomp Adjustments: in-game pause menu options
     Bool("PM_RxSmoothChassis", "smooth_chassis_depth",   "SUSPENSION FIX: "),
+    Dbl ("PM_RxHitchClamp",  "max_frame_ms",      "HITCH CLAMP: ", kHitchClampVals, 5, "%.0f MS"),
     Dbl ("PM_RxLodTraffic",  "lod_traffic_scale", "TRAFFIC LOD: ", kLodValues, 6, "%gX"),
     Dbl ("PM_RxLodCity",     "lod_city_scale",    "CITY LOD: ",    kLodValues, 6, "%gX"),
     Str ("PM_RxSpeedUnits",  "speed_units",              "SPEED UNITS: ",
